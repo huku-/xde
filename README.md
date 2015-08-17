@@ -10,7 +10,7 @@ huku &lt;[huku@grhack.net](mailto:huku@grhack.net)&gt;
 
 ## How to use
 
-First, download and compile [pyxed](https://github.com/huku/pyxed) as **xde**
+First, download and compile [pyxed](https://github.com/huku-/pyxed) as **xde**
 depends on it. You can find the relevant instructions in **pyxed**'s
 **README.md** file.
 
