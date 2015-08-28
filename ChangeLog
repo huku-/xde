@@ -1,3 +1,16 @@
+2015-08-28 huku <huku@grhack.net>
+
+    * Added class `XRefs'; a container for an instruction's code and data
+      cross references.
+    * Replaced all calls to `get_xxx_target_addresses()' with `get_xrefs()', a
+      generic function returning an `XRefs' instance.
+    * Modified class `BasicBlock'. It's now easier to determine exact basic
+      block boundaries.
+    * Several improvements in disassembly and function detection logic.
+    * Added method `get_function_basic_blocks()' in class `Disassembler'.
+    * Added "TODO" file and sample codes in "examples/".
+
+
 2015-08-17 huku <huku@grhack.net>
 
     * First public release.

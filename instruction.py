@@ -4,7 +4,7 @@
 __author__ = 'huku <huku@grhack.net>'
 
 
-import struct
+import xde.xrefs as xrefs
 
 import pyxed
 
@@ -20,8 +20,8 @@ class Instruction(object):
         # Wrapped delegate `pyxed.Instruction' object should be private.
         self._instruction = instruction
 
-        # Owning disassembler object should be public.
-        self.disassembler = disassembler
+        # Owning disassembler object should also be private.
+        self._disassembler = disassembler
 
 
     def __getattr__(self, name):
@@ -34,75 +34,67 @@ class Instruction(object):
     def __str__(self):
         return '<Instruction 0x%x>' % self.runtime_address
 
+    def __hash__(self):
+        return self.runtime_address
 
 
-    def get_indirect_code_refs(self):
+    def _get_indirect_xrefs(self):
         '''
-        Get list of indirect references to code segment (e.g. arrays of function
-        pointers etc).
+        Resolve indirect code and data cross references. Returns `XRef' instance.
         '''
 
-        target_addresses = set()
+        # Initialize empty set of cross references.
+        xr = xrefs.XRefs()
 
-        # Read unsigned immediate and, if within an executable section, add
-        # it in the set of target addresses.
-        displacement = self.get_unsigned_immediate()
-        if self.disassembler.is_memory_executable(displacement):
-            target_addresses.add(displacement)
+        # Read instruction's unsigned immediate. If it looks like an executable
+        # memory address, add it in the set of code cross references. If it
+        # looks like a readable address, mark it as a data cross reference of
+        # unknown size (hence the 0).
+        if self.get_immediate_width() > 0:
+            displacement = self.get_unsigned_immediate()
+            if self._disassembler.is_memory_executable(displacement):
+                xr.code.add(displacement)
+            elif self._disassembler.is_memory_mapped(displacement):
+                xr.data.add((displacement, 0))
 
-        # Now look for memory operands whose displacement points to a loaded
-        # section. This might be the start of an array of pointers to the
-        # code segment.
+        # Now traverse the list of memory operands.
         for i in range(self.get_number_of_memory_operands()):
             displacement = self.get_memory_displacement(i)
 
             # The memory displacement should point to a loaded section.
-            if self.disassembler.is_memory_loaded(displacement):
+            if self._disassembler.is_memory_mapped(displacement):
 
                 # Figure out the length of each element in the array.
                 length = self.get_memory_operand_length(i)
 
-                # Translate element length to `struct.unpack()' format.
-                fmt = {
-                    1: 'B', 2: 'H', 4: 'I', 6: '=HI', 8: 'Q', 10: '=HQ'
-                }[length]
+                # Add entry in data cross references set.
+                xr.data.add((displacement, length))
 
-                # Keep reading possible target addresses until there no more
-                # data to read or a value outside any executable section is
-                # read.
-                while True:
-                    data = self.disassembler.read_memory(displacement, length)
-                    if data is None:
-                        break
-
-                    target_address = long(struct.unpack(fmt, data)[-1])
-                    if not self.disassembler.is_memory_executable(target_address):
-                        break
-
-                    target_addresses.add(target_address)
-                    displacement += length
-
-        return target_addresses
+        return xr
 
 
-    def get_call_target_addresses(self):
+    def _get_call_xrefs(self):
         '''
-        Returns the set of absolute target addresses of a `call' instruction.
+        Resolve code and data cross references of a `call' instruction. Returns
+        `XRef' instance.
         '''
 
-        target_addresses = set()
+        # Initialize empty set of cross references.
+        xr = xrefs.XRefs()
 
         iform = self.get_iform()
 
         if self.get_attribute(pyxed.XED_ATTRIBUTE_FAR_XFER):
             if iform == pyxed.XED_IFORM_CALL_FAR_MEMp2:
+                # Compute union with indirect cross references.
                 # XXX: Not tested!
-                target_addresses = self.get_indirect_code_refs()
+                xr += self._get_indirect_xrefs()
 
             # Direct far call with 48-bit pointer operand.
             elif iform == pyxed.XED_IFORM_CALL_FAR_PTRp_IMMw:
+                # Add branch displacement in code cross references set.
                 # XXX: Ignore possible change in code segment?
-                target_addresses.add(self.get_branch_displacement())
+                xr.code.add(self.get_branch_displacement())
 
             else:
                 raise RuntimeError('Unknown far call instruction form "%s"' % \
@@ -118,13 +110,15 @@ class Instruction(object):
                 displacement = -(displacement & 0x80000000) + \
                     (displacement & 0x7fffffff)
 
-                # Compute absolute target address.
+                # Compute absolute target address and add in set of code cross
+                # references.
                 displacement += self.runtime_address + self.get_length()
-                target_addresses.add(displacement)
+                xr.code.add(displacement)
 
             # Indirect `call' with memory operand.
             elif iform == pyxed.XED_IFORM_CALL_NEAR_MEMv:
-                target_addresses = self.get_indirect_code_refs()
+                # Compute union with indirect cross references.
+                xr += self._get_indirect_xrefs()
 
             # Indirect `call' with register operand; do nothing for now.
             elif iform == pyxed.XED_IFORM_CALL_NEAR_GPRv:
@@ -134,28 +128,31 @@ class Instruction(object):
                 raise RuntimeError('Unknown near call instruction form "%s"' % \
                     self.dump_intel_format())
 
-        return target_addresses
+        return xr
 
 
-    def get_branch_target_addresses(self):
+    def _get_branch_xrefs(self):
         '''
-        Returns the set of absolute target addresses of a conditional and an
-        unconditional branch instruction.
+        Resolve code and data cross refereces of a branch instruction. Returns
+        `XRef' instance.
         '''
 
-        target_addresses = set()
+        # Initialize empty set of cross references.
+        xr = xrefs.XRefs()
 
         iform = self.get_iform()
 
         if self.get_attribute(pyxed.XED_ATTRIBUTE_FAR_XFER):
             if iform == pyxed.XED_IFORM_JMP_MEMp2:
+                # Compute union with indirect cross references.
                 # XXX: Not tested!
-                target_addresses = self.get_indirect_code_refs()
+                xr += self._get_indirect_xrefs()
 
             # Direct far branch with 48-bit pointer operand.
             elif iform == pyxed.XED_IFORM_JMP_FAR_PTRp_IMMw:
+                # Add branch displacement in code cross references set.
                 # XXX: Ignore possible change in code segment?
-                target_addresses.add(self.get_branch_displacement())
+                xr.code.add(self.get_branch_displacement())
 
             else:
                 raise RuntimeError('Unknown far branch instruction form')
@@ -166,7 +163,8 @@ class Instruction(object):
 
             # Indirect branch with memory operand.
             elif iform == pyxed.XED_IFORM_JMP_MEMv:
-                target_addresses = self.get_indirect_code_refs()
+                # Compute union with indirect cross references.
+                xr += self._get_indirect_xrefs()
 
             # Direct branch with displacement.
             else:
@@ -175,10 +173,13 @@ class Instruction(object):
                 # Displacement is a signed 32-bit integer, even in long mode.
                 displacement = -(displacement & 0x80000000) + \
                     (displacement & 0x7fffffff)
-                displacement += self.runtime_address + self.get_length()
-                target_addresses.add(displacement)
 
-        return target_addresses
+                # Compute absolute target address and add in set of code cross
+                # references.
+                displacement += self.runtime_address + self.get_length()
+                xr.code.add(displacement)
+
+        return xr
 
 
     def get_next_instruction_address(self):
@@ -189,27 +190,32 @@ class Instruction(object):
         return self.runtime_address + self.get_length()
 
 
+    def get_xrefs(self):
+        '''Resolve instruction cross references. Returns `XRefs()' instance.'''
 
-    def get_code_refs(self):
-        '''Returns a list of code references from the current instruction.'''
+        # Initialize empty set of cross references.
+        xr = xrefs.XRefs()
 
-        code_refs = set()
-        code_refs.update(self.get_call_target_addresses())
-        code_refs.update(self.get_branch_target_addresseses())
-        code_refs.update(self.get_next_instruction_addresses())
-        code_refs.update(self.get_indirect_code_refs())
-        return code_refs
+        category = self.get_category()
 
-    def get_data_refs(self):
-        '''Return a set of data references from the current instruction.'''
+        # Handle `call' instructions.
+        if category == pyxed.XED_CATEGORY_CALL:
+            xr += self._get_call_xrefs()
 
-        data_refs = set()
-        for i in range(self.get_number_of_memory_operands()):
-            displacement = self.get_memory_displacement(i)
-            if self.disassembler.is_memory_readable(displacement):
-                data_refs.add(displacement)
+        # Handle conditional and unconditional branch instructions.
+        elif category in [pyxed.XED_CATEGORY_COND_BR,
+                pyxed.XED_CATEGORY_UNCOND_BR]:
+            xr += self._get_branch_xrefs()
 
-        return data_refs
+        # Handle any other case.
+        else:
+            xr += self._get_indirect_xrefs()
+
+        # Don't add next instruction in code cross references. IDA does that and
+        # it's pretty annoying.
+        #
+        # xr.code.add(self.get_next_instruction_addresses())
+        return xr
 
 
     def get_read_registers(self):

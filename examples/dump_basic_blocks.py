@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-'''main.py - Demo disassembler.'''
+'''dump_basic_blocks.py - Dumps basic blocks and their links.'''
 
 __author__ = 'huku <huku@grhack.net>'
 
 
 import sys
 
-import disassembler
+from xde import disassembler
 
 
 def main(argv):

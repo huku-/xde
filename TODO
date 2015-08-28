@@ -1,0 +1,5 @@
+2015-08-27 huku <huku@grhack.net>
+
+  * Augment disassembly by analyzing DWARF for ELF and Mach-O and PDB for PE. 
+  * Take into account LC_FUNCTION_STARTS load command for Mach-O.
+

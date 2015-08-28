@@ -25,7 +25,7 @@ A directory named **ls/** will be created. Pass the path to this directory to
 the constructor of class **Disassembler** as shown below.
 
 ```python
-import disassembler
+from xde import disassembler
 
 disasm = disassembler.Disassembler("ls/")
 disasm.analyze()
