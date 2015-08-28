@@ -52,7 +52,7 @@ for address, block in disasm.basic_blocks.items():
     print '    Outgoing: %s' % map(str, disasm.cfg.outgoing[block])
 ```
 
-A complete example can be found in **main.py**.
+Complete examples can be found in **examples/**.
 
 For bugs, comments, whatever feel free to contact me.
 
