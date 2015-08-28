@@ -302,7 +302,7 @@ class Disassembler(object):
 
                         # Extract possible target address.
                         data = self.read_memory(address, size)
-                        target_address = long(struct.unpack(fmt, data)[0])
+                        target_address = long(struct.unpack(fmt, data)[-1])
 
                         if self.is_memory_executable(target_address):
 
