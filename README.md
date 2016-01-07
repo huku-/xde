@@ -6,6 +6,8 @@ huku &lt;[huku@grhack.net](mailto:huku@grhack.net)&gt;
 ## About
 
 **xde** is a WIP disassembly engine based on [pyxed](https://github.com/huku-/pyxed).
+It's being actively developed and redesigned to become a full featured, reliable,
+modular, yet minimal and clean, disassembly engine. Stay tuned for more updates.
 
 
 ## How to use
@@ -21,13 +23,13 @@ the binary you would like to disassemble.
 $ ./sex.sh /bin/ls
 ```
 
-A directory named **ls/** will be created. Pass the path to this directory to
-the constructor of class **Disassembler** as shown below.
+A directory named **ls.sex/** will be created. Pass the path to this directory
+to the constructor of class **Disassembler** as shown below.
 
 ```python
 from xde import disassembler
 
-disasm = disassembler.Disassembler("ls/")
+disasm = disassembler.Disassembler("ls.sex/")
 disasm.analyze()
 ```
 
