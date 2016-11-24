@@ -1,60 +1,61 @@
-# XDE - XED2 based Disassembly Engine
+# XDE - XED based Disassembly Engine
 
 huku &lt;[huku@grhack.net](mailto:huku@grhack.net)&gt;
 
 
 ## About
 
-**xde** is a WIP disassembly engine based on [pyxed](https://github.com/huku-/pyxed).
-It's being actively developed and redesigned to become a full featured, reliable,
-modular, yet minimal and clean, disassembly engine. Stay tuned for more updates.
+XDE is a WIP disassembly engine based on [pyxed](https://github.com/huku-/pyxed)
+and [pyrsistence](https://github.com/huku-/pyrsistence).
+
+XDE is constantly updated and will soon become a full featured, reliable, modular,
+yet minimal and clean, x86 and x86\_64 disassembly engine. At its current version,
+XDE can handle large CFGs, using the API offered by **pyrsistence**, without
+wasting too much main memory. This feature alone makes XDE ideal for implementing
+binary analyses schemes.
 
 
-## How to use
+## Installing XDE
 
-First, download and compile [pyxed](https://github.com/huku-/pyxed) as **xde**
-depends on it. You can find the relevant instructions in **pyxed**'s
-**README.md** file.
+First, download and compile [pyxed](https://github.com/huku-/pyxed) and
+[pyrsistence](https://github.com/huku-/pyrsistence) as XDE depends on both.
+You can find the relevant instructions in each project's **README.md** file.
 
-Then, grab [section extractor](https://github.com/huku-/sex) and run it against
-the binary you would like to disassemble.
+Then, grab [section extractor](https://github.com/huku-/sex) and install it as
+well.
+
+Last but not least, run the following command to install XDE:
 
 ```sh
-$ ./sex.sh /bin/ls
+python setup.py install
+```
+
+The setup script will install the **xde** Python module under **site-packages**
+and a small utility, named **xdec**, under **/usr/local/bin**.
+
+
+## Using XDE
+
+First run the section extractor script against the binary you would like to
+disassemble.
+
+```sh
+$ sex /bin/ls
 ```
 
 A directory named **ls.sex/** will be created. Pass the path to this directory
 to the constructor of class **Disassembler** as shown below.
 
 ```python
-from xde import disassembler
+import xde
 
-disasm = disassembler.Disassembler("ls.sex/")
-disasm.analyze()
+disasm = xde.disassembler.Disassembler('ls.sex/')
+disasm.disassemble()
 ```
 
-Member **functions** holds the list of discovered functions:
-
-```python
-print map(hex, disasm.functions)
-```
-
-Member **cfg** holds the program's control flow graph. It's a **SimpleGraph**
-instance (see **simple_graph.py**) where each node is of type **BasicBlock**
-(see **basic_block.py**). A map of basic block addresses to **BasicBlock**
-instances can be accessed via member **basic_blocks**.
-
-By combining this knowledge, to print all basic blocks along with their incoming
-and outgoing links, you can do the following:
-
-```python
-for address, block in disasm.basic_blocks.items():
-    print '0x%x => %s' % (address, str(block))
-    print '    Incoming: %s' % map(str, disasm.cfg.incoming[block])
-    print '    Outgoing: %s' % map(str, disasm.cfg.outgoing[block])
-```
-
-Complete examples can be found in **examples/**.
+Once **disassemble()** returns, you can access various members of class
+**Disassembler** to explore the program's instructions and structure. For more
+information and examples have a look at XDE's [wiki](https://github.com/huku-/xde/wiki).
 
 For bugs, comments, whatever feel free to contact me.
 

@@ -1,3 +1,9 @@
+2016-11-24 huku <huku@grhack.net>
+
+    * Completely re-wrote and re-designed XDE to make it able to perform large
+      scale analyses with the help of `pyrsistence' (tagged as v2.0).
+
+
 2015-08-28 huku <huku@grhack.net>
 
     * Added class `XRefs'; a container for an instruction's code and data

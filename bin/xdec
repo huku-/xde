@@ -1,0 +1,34 @@
+#!/usr/bin/python
+
+__author__ = 'huku <huku@grhack.net>'
+
+
+import sys
+import code
+import getopt
+
+try:
+    import xde
+except ImportError:
+    sys.exit('XDE not installed?')
+
+
+def main(argv):
+
+    if len(argv) != 2:
+        print '%s <S.EX. project>' % argv[0]
+        return -1
+
+    # Disassemble S.EX. project.
+    disasm = xde.disassembler.Disassembler(argv[1])
+    # disasm.disassemble()
+
+    print 'Type "disasm.disassemble()" to disassemble project'
+
+    # Disassembly finished, drop in Python interpreter.
+    code.interact('XDE Python console', local=locals())
+
+
+if __name__ == '__main__':
+    main(sys.argv)
+

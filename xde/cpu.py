@@ -1,5 +1,23 @@
 #!/usr/bin/env python
-'''x86_cpu.py - Definitions for IA-32 and AMD64 CPUs.'''
+'''
+:mod:`cpu` - Definitions for IA-32 and AMD64 CPUs
+=================================================
+
+.. module: cpu
+   :platform: Unix, Windows
+   :synopsis: Definitions for IA-32 and AMD64 CPUs
+.. moduleauthor:: huku <huku@grhack.net>
+
+
+About
+-----
+Exports class :class:`CPU` which provides a simple abstraction layer over the
+various CPU configurations (WIP).
+
+
+Classes
+-------
+'''
 
 __author__ = 'huku <huku@grhack.net>'
 
@@ -13,9 +31,17 @@ X86_MODE_PROTECTED_64BIT = 3
 
 
 class CPU(object):
-    '''Represents an IA-32 or AMD64 CPU.'''
+    '''
+    Represents an IA-32 or AMD64 CPU.
+
+    .. automethod:: __init__
+    '''
 
     def __init__(self, mode):
+        '''
+        :param mode: Mode of the instantiated CPU. May be :data:`X86_MODE_REAL`,
+            :data:`X86_MODE_PROTECTED_32BIT` or :data:`X86_MODE_PROTECTED_64BIT`.
+        '''
         self.mode = mode
 
     def __str__(self):
@@ -30,7 +56,12 @@ class CPU(object):
 
 
     def get_program_counter_name(self):
-        '''Return name of program counter register.'''
+        '''
+        Get name of program counter register.
+
+        :returns: Name of program counter register.
+        :rtype: ``int``
+        '''
 
         name = None
         if self.mode == X86_MODE_REAL:
@@ -43,7 +74,12 @@ class CPU(object):
 
 
     def get_stack_pointer_name(self):
-        '''Return name of stack pointer register.'''
+        '''
+        Get name of stack pointer register.
+
+        :returns: Name of stack pointer register.
+        :rtype: ``int``
+        '''
 
         name = None
         if self.mode == X86_MODE_REAL:
@@ -56,7 +92,12 @@ class CPU(object):
 
 
     def get_segment_register_names(self):
-        '''Return set of segment register names.'''
+        '''
+        Get set of segment register names.
+
+        :returns: Set of segment register names.
+        :rtype: ``set``
+        '''
 
         names = set()
 
@@ -76,7 +117,12 @@ class CPU(object):
 
 
     def get_general_purpose_register_names(self):
-        '''Return set of general purpose register names.'''
+        '''
+        Get set of general purpose register names.
+
+        :returns: Set of general purpose register names.
+        :rtype: ``set``
+        '''
 
         names = set()
 
@@ -125,5 +171,4 @@ class CPU(object):
                 pyxed.XED_REG_R14, pyxed.XED_REG_R15])
 
         return names
-
 
