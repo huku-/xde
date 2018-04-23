@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 '''
 :mod:`disassembler` - Main class for disassembling S.EX. projects
-==================================================================
+=================================================================
 
 .. module: disassembler
    :platform: Unix, Windows
@@ -111,6 +111,7 @@ class Disassembler(object):
     .. automethod:: _disassemble_relocated
     .. automethod:: _disassemble_deferred
     .. automethod:: _disassemble_orphan
+    .. automethod:: _build_basic_block_set_for_range
     .. automethod:: _build_basic_block_set
     .. automethod:: _build_cfg
     .. automethod:: _analyze_relocation
@@ -150,8 +151,7 @@ class Disassembler(object):
         # Initialize external memory list holding program's shadow memory.
         # Remember that the section array is sorted by address.
         self.shadow = em_shadow_memory.EMShadowMemory('%s/shadow' % dirname,
-            self.loader.sections[0].start_address,
-            self.loader.sections[-1].end_address)
+           [(s.start_address, s.end_address) for s in self.loader.sections])
 
         # Initialize graph of code cross references. Maps instruction addresses
         # to sets of referenced instruction addresses.
@@ -467,12 +467,16 @@ class Disassembler(object):
         if iform != pyxed.XED_IFORM_XEND:
             displacement = insn.get_branch_displacement()
             if self.is_memory_executable(displacement):
-                self.code_xrefs.add_edge((runtime_address, displacement))
+                edge = (runtime_address, displacement)
+                self.code_xrefs.add_edge(edge)
+                self.code_xrefs.add_edge_attribute(edge, 'predicate', True)
                 self.shadow.mark_as_basic_block_leader(displacement)
 
         # Next instruction is also a basic block leader.
         next_address = insn.get_next_instruction_address()
-        self.code_xrefs.add_edge((runtime_address, next_address))
+        edge = (runtime_address, next_address)
+        self.code_xrefs.add_edge(edge)
+        self.code_xrefs.add_edge_attribute(edge, 'predicate', False)
         self.shadow.mark_as_basic_block_leader(next_address)
 
 
@@ -773,8 +777,7 @@ class Disassembler(object):
         # Use classification only if not error.
         if not error:
             # Instantiate classifier and set the error flag if not code.
-            c = classifiers.classifier.Classifier()
-            error = not c.is_code(insns)
+            error = classifiers.classifier.Classifier().is_data(insns)
 
         # Return sucess if the error flag is not set.
         return not error
@@ -927,36 +930,35 @@ class Disassembler(object):
 
 
 
-    def _build_basic_block_set(self):
+    def _build_basic_block_set_for_range(self, start_address, end_address):
         '''
-        Parse shadow memory marks and build basic block set.
+        Parse shadow memory marks and build basic block set for the given memory
+        range.
 
         .. warning:: This is a private function, don't use it directly.
         '''
 
-        _msg('Building basic block set')
-
-        address = self.shadow.start_address
-        while address < self.shadow.end_address:
+        address = start_address
+        while address <= end_address:
 
             # Get the address of the next available basic block leader.
-            while address < self.shadow.end_address and \
+            while address <= end_address and \
                     not self.shadow.is_marked_as_basic_block_leader(address):
                 address += 1
 
             # If no more basic block leaders, break.
-            if address >= self.shadow.end_address:
+            if address > end_address:
                 break
 
             # This is the basic block's start address.
-            start_address = address
+            bb_start_address = address
             address += 1
 
             # This basic block extends up to the next basic block leader or to
             # the end of the current code region (a data region may lie between
             # two basic block leaders).
-            instructions = [start_address]
-            while address < self.shadow.end_address and \
+            instructions = [bb_start_address]
+            while address <= end_address and \
                     self.shadow.is_marked_as_code(address) and \
                     not self.shadow.is_marked_as_basic_block_leader(address):
 
@@ -969,12 +971,24 @@ class Disassembler(object):
 
             # This is the basic block's end address (i.e. the address of the
             # next instruction - this is how IDA Pro does it).
-            end_address = address
+            bb_end_address = address
 
             # Create a `BasicBlock' object and add it in basic blocks map.
-            self.basic_blocks[start_address] = \
-                basic_block.BasicBlock(start_address, end_address, instructions)
+            self.basic_blocks[bb_start_address] = \
+                basic_block.BasicBlock(bb_start_address, bb_end_address, instructions)
 
+
+    def _build_basic_block_set(self):
+        '''
+        Parse shadow memory marks and build basic block set.
+
+        .. warning:: This is a private function, don't use it directly.
+        '''
+
+        _msg('Building basic block set')
+
+        for start_address, end_address in self.shadow.memory_ranges:
+            self._build_basic_block_set_for_range(start_address, end_address)
 
 
     def _build_cfg(self):
@@ -1009,17 +1023,20 @@ class Disassembler(object):
                 raise RuntimeError('Instruction at %#x not found' % address)
 
             # Get set of target addresses of this instruction.
-            target_addresses = self.code_xrefs.get_successors(address)
+            successors = self.code_xrefs.get_successors(address)
 
             # If last instruction in this basic block modifies the program
-            # counter, add CFG links for all possible target addresses.
+            # counter, add CFG links for all possible target addresses. If it's
+            # a RET instruction, the target addresses set should be empty.
             if program_counter_name in insn.get_written_registers():
-                for target_address in target_addresses:
+                for successor in successors:
 
                     # Create CFG links only for target addresses which are basic
-                    # block leaders (this includes calls to functions).
-                    if self.shadow.is_marked_as_basic_block_leader(target_address):
-                        self.cfg.add_edge((block.start_address, target_address))
+                    # block leaders but not function entry points. This results
+                    # in a forest of intra-procedural CFGs.
+                    if self.shadow.is_marked_as_basic_block_leader(successor) and \
+                            not self.shadow.is_marked_as_function(successor):
+                        self.cfg.add_edge((block.start_address, successor))
 
             # If last instruction in this basic block doesn't modify the program
             # counter, execution flow continues to the basic block physically
@@ -1261,7 +1278,7 @@ class Disassembler(object):
 
         r = None
 
-        if self.shadow.start_address <= address < self.shadow.end_address:
+        if self.shadow.start_address <= address <= self.shadow.end_address:
             while not self.shadow.is_marked_as_basic_block_leader(address):
                 address -= 1
             r = self.basic_blocks[address]

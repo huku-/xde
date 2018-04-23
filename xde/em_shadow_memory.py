@@ -10,8 +10,8 @@
 
 About
 -----
-Simple 1-1 shadow memory implementation implemented on top of external memory
-lists. Shadow memory techniques are widely used in various binary analysis
+Simple, sparse, 1-1 shadow memory implementation implemented on top of external
+memory lists. Shadow memory techniques are widely used in various binary analysis
 schemes. For a good overview, have a look at [1] published by the Valgrind team.
 
 [1] http://valgrind.org/docs/shadow-memory2007.pdf
@@ -25,6 +25,7 @@ __author__ = 'huku <huku@grhack.net>'
 
 
 import sys
+import os
 
 try:
     import pyrsistence
@@ -46,98 +47,201 @@ M_RELOCATED_LEAF = 128      # Address holds last relocated value in a chain
 
 class EMShadowMemory(object):
     '''
-    A class that implements a simple 1-1 shadow memory model.
+    A class that implements a simple, sparse, 1-1 shadow memory model.
 
     .. automethod:: __init__
+    .. automethod:: _merge_memory_ranges
+    .. automethod:: _make_shadow_memory
+    .. automethod:: _get_shadow_memory_coordinates
+    .. automethod:: _mark
+    .. automethod:: _unmark
+    .. automethod:: _is_marked
+    .. automethod:: _mark_range
+    .. automethod:: _unmark_range
+    .. automethod:: _is_marked_range
     '''
 
-    def __init__(self, dirname, start_address, end_address):
+    def __init__(self, dirname, memory_ranges):
         '''
-        :param dirname: Directory where the shadow memory will be stored.
-        :param start_address: Address of first byte in shadow memory.
-        :param end_address: Address of last byte in shadow memory.
+        :param dirname: Directory where various external memory list files will
+            be stored. The directory is created if it does not exist.
+        :param memory_ranges: Memory ranges that will be shadowed.
         '''
 
-        # Compute size of shadow memory.
+        # Create container directory if not there.
+        if os.access(dirname, os.F_OK) == False:
+            os.makedirs(dirname, 0750)
+
+        # Merge given memory ranges into maximally contiguous chunks.
+        memory_ranges = self._merge_memory_ranges(memory_ranges)
+
+        # Create shadow memory for each of the above chunks.
+        shadows = []
+        for memory_range in memory_ranges:
+            shadows.append(self._make_shadow_memory(dirname, memory_range))
+
+        self.memory_ranges = memory_ranges
+        self.dirname = dirname
+        self.shadows = shadows
+
+
+    def __del__(self):
+        for shadow in self.shadows:
+            shadow.close()
+
+
+
+    def _merge_memory_ranges(self, memory_ranges):
+        '''
+        Given a list of memory ranges, merge contiguous elements and return a
+        new, possibly smaller list, of memory ranges.
+
+        :param memory_ranges: Memory ranges that will be merged.
+        :returns: List of merged memory ranges.
+        :rtype: ``list``
+
+        .. warning:: This is a private function, don't use it directly.
+        '''
+
+        merged_memory_ranges = []
+        for memory_range in memory_ranges:
+            new_start_address, new_end_address = memory_range
+
+            for i, (start_address, end_address) in enumerate(merged_memory_ranges):
+                if new_start_address <= start_address <= new_end_address or \
+                        new_start_address <= end_address + 1 <= new_end_address:
+                    start_address = min(new_start_address, start_address)
+                    end_address = max(new_end_address, end_address)
+                    merged_memory_ranges[i] = (start_address, end_address)
+                    break
+            else:
+                merged_memory_ranges.append(memory_range)
+
+        return sorted(merged_memory_ranges)
+
+
+    def _make_shadow_memory(self, dirname, memory_range):
+        '''
+        Make shadow memory for the given memory range.
+
+        :param dirname: Directory where external memory list will be stored. The
+            directory is created if it does not exist.
+        :param memory_range: Memory range to be shadowed.
+        :returns: External memory list holding *memory_range*'s shadow bytes.
+        :rtype: ``pyrsistence.EMList``
+
+        .. warning:: This is a private function, don't use it directly.
+        '''
+
+        start_address, end_address = memory_range
+        filename = '%s/%#x-%#x' % (dirname, start_address, end_address)
+
+        shadow = pyrsistence.EMList(filename)
         size = end_address - start_address + 1
-
-        # Initialize external memory list holding the shadow memory contents and
-        # mark all elements as unanalyzed.
-        shadow = pyrsistence.EMList(dirname)
         while len(shadow) < size:
             shadow.append(M_NONE)
 
-        self.start_address = start_address
-        self.end_address = end_address
-        self.size = end_address - start_address + 1
-        self.dirname = dirname
-        self.shadow = shadow
-
-    def __del__(self):
-        self.shadow.close()
-
-    def __str__(self):
-        return '<EMShadowMemory %#x-%#x>' % (self.start_address, self.end_address)
+        return shadow
 
 
-    # Low level getter and setter for marks.
+    def _get_shadow_memory_coordinates(self, address):
+        '''
+        Given an arbitrary address, return the index of the shadowed memory
+        range that contains it and the index of the addressed byte in the memory
+        range. Those two indices are the *shadow memory coordinates* of address
+        *address*.
 
-    def _get_mark(self, address):
-        try:
-            mark = self.shadow[address - self.start_address]
-        except IndexError:
-            mark = 0
-        return mark
+        Raises ``RuntimeError`` if *address* is not backed by this shadow memory.
 
-    def _set_mark(self, address, mark):
-        try:
-            self.shadow[address - self.start_address] = mark
-        except IndexError:
-            pass
+        :param address: The address whose coordinates to return.
+        :returns: A tuple holding the *shadow memory coordinates* of *address*.
+        :rtype: ``tuple``
 
+        .. warning:: This is a private function, don't use it directly.
+        '''
 
-    # Low level methods for adding and removing marks from a single address.
+        for i, (start_address, end_address) in enumerate(self.memory_ranges):
+            if start_address <= address <= end_address:
+                return (i, end_address - address)
+
+        raise RuntimeError('Address %#x not backed by shadow memory' % address)
+
 
     def _mark(self, address, mark):
-        new_mark = self._get_mark(address)
-        new_mark |= mark
-        self._set_mark(address, new_mark)
+        i, j = self._get_shadow_memory_coordinates(address)
+        shadow = self.shadows[i]
+        new_mark = shadow[j]
+        if new_mark & mark != mark:
+            new_mark |= mark
+            shadow[j] = new_mark
+
 
     def _unmark(self, address, mark):
-        new_mark = self._get_mark(address)
-        new_mark &= ~mark
-        self._set_mark(address, new_mark)
+        i, j = self._get_shadow_memory_coordinates(address)
+        shadow = self.shadows[i]
+        new_mark = shadow[j]
+        if new_mark & mark != 0:
+            new_mark &= ~mark
+            shadow[j] = new_mark
 
 
-    # Low level methods for adding, removing and testing marks of address ranges.
+    def _is_marked(self, address, mark):
+        i, j = self._get_shadow_memory_coordinates(address)
+        shadow = self.shadows[i]
+        return shadow[j] & mark == mark
+
 
     def _mark_range(self, address, length, mark):
-        for i in xrange(length):
-            self._mark(address + i, mark)
+        i, j = self._get_shadow_memory_coordinates(address)
+        shadow = self.shadows[i]
+        limit = min(j + length, len(shadow))
+        while j < limit:
+            new_mark = shadow[j]
+            if new_mark & mark != mark:
+                new_mark |= mark
+                shadow[j] = new_mark
+            j += 1
+
 
     def _unmark_range(self, address, length, mark):
-        for i in xrange(length):
-            self._unmark(address + i, mark)
+        i, j = self._get_shadow_memory_coordinates(address)
+        shadow = self.shadows[i]
+        limit = min(j + length, len(shadow))
+        while j < limit:
+            new_mark = shadow[j]
+            if new_mark & mark != 0:
+                new_mark &= ~mark
+                shadow[j] = new_mark
+            j += 1
+
 
     def _is_marked_range(self, address, length, mark):
+
+        i, j = self._get_shadow_memory_coordinates(address)
+        shadow = self.shadows[i]
+        limit = min(j + length, len(shadow))
+
         r = 0
-        for i in xrange(length):
-            if self._get_mark(address + i) & mark == mark:
-                r += 1
+        while j < limit and shadow[j] & mark == mark:
+            r += 1
+            j += 1
+
         return r
+
 
 
     # Public API begins here.
 
-    # Standard interface to `open()' and `close()'.
-
     def open(self):
         '''Open, or re-open, shadow memory.'''
-        self.shadow.open(self.filename)
+        for i, (start_address, end_address) in enumerate(self.memory_ranges):
+            filename = '%s/%#x-%#x' % (self.dirname, start_address, end_address)
+            self.shadow[i].open(filename)
 
     def close(self):
         '''Close shadow memory.'''
-        self.shadow.close()
+        for shadow in self.shadows:
+            shadow.close()
 
 
     def mark_as_analyzed(self, address, length=1):
@@ -218,8 +322,6 @@ class EMShadowMemory(object):
         self._mark(address, M_RELOCATED_LEAF)
 
 
-    # Remove mark combinations from single address or address range.
-
     def unmark_as_analyzed(self, address, length=1):
         '''
         Unmark address range as analyzed.
@@ -299,8 +401,6 @@ class EMShadowMemory(object):
         self._unmark(address, M_RELOCATED_LEAF)
 
 
-    # Check mark of single address or address range.
-
     def is_marked_as_analyzed(self, address, length=1):
         '''
         Check if address range is marked as analyzed.
@@ -333,7 +433,7 @@ class EMShadowMemory(object):
         :returns: ``True`` if marked as basic block leader, ``False`` otherwise.
         :rtype: ``bool``
         '''
-        return self._get_mark(address) & M_BASIC_BLOCK_LEADER
+        return self._is_marked(address, M_BASIC_BLOCK_LEADER)
 
 
     def is_marked_as_function(self, address):
@@ -344,7 +444,7 @@ class EMShadowMemory(object):
         :returns: ``True`` if marked as function entry point, ``False`` otherwise.
         :rtype: ``bool``
         '''
-        return self._get_mark(address) & M_FUNCTION
+        return self._is_marked(address, M_FUNCTION)
 
 
     def is_marked_as_data(self, address, length=1):
@@ -367,7 +467,7 @@ class EMShadowMemory(object):
         :returns: ``True`` if marked as head, ``False`` otherwise.
         :rtype: ``bool``
         '''
-        return self._get_mark(address) & M_HEAD
+        return self._is_marked(address, M_HEAD)
 
 
     def is_marked_as_relocated(self, address):
@@ -378,7 +478,7 @@ class EMShadowMemory(object):
         :returns: ``True`` if marked as relocated, ``False`` otherwise.
         :rtype: ``bool``
         '''
-        return self._get_mark(address) & M_RELOCATED
+        return self._is_marked(address, M_RELOCATED)
 
 
     def is_marked_as_relocated_leaf(self, address):
@@ -389,5 +489,5 @@ class EMShadowMemory(object):
         :returns: ``True`` if marked as relocated leaf, ``False`` otherwise.
         :rtype: ``bool``
         '''
-        return self._get_mark(address) & M_RELOCATED_LEAF
+        return self._is_marked(address, M_RELOCATED_LEAF)
 

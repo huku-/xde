@@ -39,7 +39,7 @@ class BasicBlock(object):
         self.instructions = instructions
 
     def __str__(self):
-        return '<BasicBlock 0x%x-0x%x>' % (self.start_address, self.end_address)
+        return '<BasicBlock %#x-%#x>' % (self.start_address, self.end_address)
 
     def __eq__(self, other):
         return self.start_address == other.start_address and \

@@ -57,7 +57,7 @@ class Instruction(object):
         return getattr(self._instruction, name)
 
     def __str__(self):
-        return '<Instruction 0x%x>' % self.runtime_address
+        return '<Instruction %#x>' % self.runtime_address
 
     def __hash__(self):
         return self.runtime_address

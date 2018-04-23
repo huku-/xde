@@ -64,6 +64,7 @@ PROLOGUE_ICLASSES = [
     pyxed.XED_ICLASS_JS,
     pyxed.XED_ICLASS_JZ,
     pyxed.XED_ICLASS_LEA,
+    # pyxed.XED_ICLASS_ADD,
     pyxed.XED_ICLASS_SUB,
     pyxed.XED_ICLASS_AND,
     pyxed.XED_ICLASS_XOR,

@@ -120,7 +120,7 @@ max-statements=64
 max-parents=7
 max-attributes=16
 min-public-methods=0
-max-public-methods=20
+max-public-methods=50
 
 
 [IMPORTS]

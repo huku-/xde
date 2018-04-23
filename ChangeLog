@@ -1,3 +1,15 @@
+2018-04-23 huku <huku@grhack.net>
+
+    * Changed shadow memory implementation from linear to sparse. Non-contiguous
+      memory ranges can now be handled more efficiently.
+    * Add edge attributes in CFG for conditional jump instructions. Edge
+      attribute is named "predicate" and is set to `True', for the CFG edge
+      followed when the condition evaluates to true, and `False' for the other
+      edge.
+    * Fixed Sphinx header typo.
+    * Convert "0x%x" to "%#x" in calls to `print'.
+
+
 2016-11-24 huku <huku@grhack.net>
 
     * Completely re-wrote and re-designed XDE to make it able to perform large
